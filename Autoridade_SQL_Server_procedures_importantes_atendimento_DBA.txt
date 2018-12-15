@@ -9,9 +9,9 @@ CREATE PROCEDURE sp_Quem
     @loginame     sysname = NULL  
 as  
 
--- Exibe todos os bloqueios da instância
+-- Exibe todos os bloqueios da instancia
 -- De www.clouddbm.com Opensource Copywrited by Gilberto Rosa (gilberto.rosa@clouddbm.com)
--- Script já executado em mais de 10 mil Bancos de Dados, valide seu ambiente e tenha backup
+-- Script executado em mais de 10 mil Bancos de Dados, valide seu ambiente e tenha backup
 
   
 set nocount on  
@@ -302,9 +302,9 @@ go
   CREATE PROCEDURE sp_operador  
 AS  
 
--- Exibe a causa raiz dos bloqueios que devem ser finalizados com cuidado e sob análise da causa raiz
+-- Exibe a causa raiz dos bloqueios que devem ser finalizados com cuidado e sob anï¿½lise da causa raiz
 -- De www.clouddbm.com Opensource Copywrited by Gilberto Rosa (gilberto.rosa@clouddbm.com)
--- Script já executado em mais de 10 mil Bancos de Dados, valide seu ambiente e tenha backup
+-- Script executado em mais de 10 mil Bancos de Dados, valide seu ambiente e tenha backup
 
 
 IF EXISTS  
@@ -321,7 +321,7 @@ IF EXISTS
         WHERE spid IN (SELECT blocked FROM master.dbo.sysprocesses (nolock))  
             AND blocked=0  
 ELSE  
-SELECT "Não há processos bloqueados !"  
+SELECT "sem processos bloqueados !"  
   
 go
 -------------------
@@ -333,9 +333,9 @@ go
  create procedure sp_executando as   
 set nocount on
 
--- Existe todos os processos em execução na instância sql server
+-- Existe todos os processos em execuï¿½ï¿½o na instancia sql server
 -- De www.clouddbm.com Opensource Copywrited by Gilberto Rosa (gilberto.rosa@clouddbm.com)
--- Script já executado em mais de 10 mil Bancos de Dados, valide seu ambiente e tenha backup
+-- Script executado em mais de 10 mil Bancos de Dados, valide seu ambiente e tenha backup
 
   
 declare @QualID varchar(5)  
@@ -366,7 +366,7 @@ select @QualID = spid from #tmpProc
 While @@RowCount <> 0  
   Begin  
    Print ""  
-   Print "                                       »»» Comando executado pelo processo " + @QualID + " «««"  
+   Print "                                       ï¿½ï¿½ï¿½ Comando executado pelo processo " + @QualID + " ï¿½ï¿½ï¿½"  
    execute ( "dbcc inputbuffer ( " + @QualID + " )" )  
    delete from #tmpProc  
    select @QualID = spid from #tmpProc  
@@ -775,7 +775,7 @@ BEGIN
   
 /***********************************************************************************************************  
 Procedure: sp_generate_inserts  (Build 22)   
-  (Copyright © 2002 Narayana Vyas Kondreddi. All rights reserved.)  
+  (Copyright ï¿½ 2002 Narayana Vyas Kondreddi. All rights reserved.)  
                                             
 Purpose: To generate INSERT statements from existing data.   
   These INSERTS can be executed to regenerate the data at some other location.  
@@ -2288,7 +2288,7 @@ While @@FETCH_STATUS = 0
   Begin  
     if (Upper(@LoginName) <> 'SA') OR (Upper(@LoginName) <> 'CPD\SICLASQLSERVICE')  
       Begin  
-       set @Comando = 'Kill ' + convert(varchar(4),@NumSPID) + ' -- Usuário: ' + @LoginName  
+       set @Comando = 'Kill ' + convert(varchar(4),@NumSPID) + ' -- Usuï¿½rio: ' + @LoginName  
        print @Comando  
        set @Comando = 'Kill ' + convert(varchar(4),@NumSPID)  
        execute ( @Comando )  
@@ -2307,9 +2307,9 @@ go
 create procedure sp_acerta_logins
 as  
 
--- Apos um restore utilize essa stored procedure para acertas os logins orfãos, dentro do banco de dados
+-- Apos um restore utilize essa stored procedure para acertas os logins orfï¿½os, dentro do banco de dados
 -- De www.clouddbm.com Opensource Copywrited by Gilberto Rosa (gilberto.rosa@clouddbm.com)
--- Script já executado em mais de 10 mil Bancos de Dados, valide seu ambiente e tenha backup
+-- Script executado em mais de 10 mil Bancos de Dados, valide seu ambiente e tenha backup
 
   
 declare @cmd varchar(1000)  
