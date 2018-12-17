@@ -1,0 +1,449 @@
+﻿use master
+go
+
+ 
+/****** Object:  StoredProcedure [dbo].[spu_create_otimizacao_necessaria_todos_bancos]    Script Date: 09/19/2012 15:18:42 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ 
+create procedure [dbo].[spu_create_otimizacao_necessaria_todos_bancos]  
+as  
+  
+declare @proc_text varchar(8000)  
+  
+set @proc_text = ('CREATE procedure [dbo].[spu_otimizacao_necessaria] as    
+print char(13)+''''OTIMIZANDO O BANCO ''''+db_name()+'''' ''''+char(13)+char(13)    
+set nocount on    
+declare @tablename varchar (128)    
+declare @TABLE_SCHEMA varchar (128)   
+declare @execstr   varchar (255)    
+declare @ObjectId  int    
+declare @indexid   int    
+declare @frag      decimal    
+declare @maxfrag   decimal    
+declare @mindens  decimal    
+declare @dens   decimal    
+declare @nome_indice varchar(3000)  
+select @maxfrag = 10    
+select @mindens = 70    
+  
+declare tables cursor for    
+   select TABLE_NAME,TABLE_SCHEMA  from INFORMATION_SCHEMA.TABLES (nolock)  where TABLE_TYPE = ''''BASE TABLE'''' order by TABLE_NAME    
+create table #tabela_framentacao_acima_10_densidade_abaixo_70 (    
+   ObjectName CHAR (255),    
+   ObjectId INT,    
+   IndexName CHAR (255),    
+   IndexId INT,    
+   Lvl INT,    
+   CountPages INT,    
+   CountRows INT,    
+   MinRecSize INT,    
+   MaxRecSize INT,    
+   AvgRecSize INT,    
+   ForRecCount INT,    
+   Extents INT,    
+   ExtentSwitches INT,    
+   AvgFreeBytes INT,    
+   AvgPageDensity INT,    
+   ScanDensity DECIMAL,    
+   BestCount INT,    
+   ActualCount INT,    
+   LogicalFrag DECIMAL,    
+   ExtentFrag DECIMAL)    
+create table #resultado_frag_lista_de_comandos_para_otimizacao (des_comando varchar(8000))    
+open tables    
+fetch next from tables into @tablename,@TABLE_SCHEMA    
+while @@fetch_status = 0    
+begin    
+   insert into #tabela_framentacao_acima_10_densidade_abaixo_70 exec (''''dbcc showcontig ('''''''''''' + @TABLE_SCHEMA + ''''.'''' + @tablename + '''''''''''')  with fast, tableresults, all_indexes, no_infomsgs'''')    
+   fetch next from tables into @tablename,@TABLE_SCHEMA    
+end  
+close tables    
+deallocate tables  
+declare indexes cursor for    
+   select ObjectName,table_schema, ObjectId, IndexId, LogicalFrag, ScanDensity from #tabela_framentacao_acima_10_densidade_abaixo_70 tbl_frg, INFORMATION_SCHEMA.TABLES tbl (nolock)    
+   where (LogicalFrag >= @maxfrag or ScanDensity < @mindens)  and indexproperty (ObjectId, IndexName, ''''INDEXDEPTH'''') > 0 and tbl_frg.ObjectName COLLATE DATABASE_DEFAULT = tbl.table_name COLLATE DATABASE_DEFAULT and tbl.TABLE_TYPE = ''''BASE TABLE''''
+ COLLATE DATABASE_DEFAULT   
+open indexes    
+fetch next from indexes into @tablename, @TABLE_SCHEMA,@ObjectId, @indexid, @frag, @dens    
+while @@fetch_status = 0    
+begin    
+ select @nome_indice = (select name from sysindexes (nolock) where id=@ObjectId and indid = @indexid)    
+insert into #resultado_frag_lista_de_comandos_para_otimizacao   select ''''dbcc dbreindex ([''''+@TABLE_SCHEMA + ''''.''''+rtrim(@tablename) + ''''],['''' + rtrim(@nome_indice) + ''''])  -- fragmentation currently ''''       + rtrim(convert(varchar(15),@frag)) + ''''%'''' + ''''    -- density ''''+ rtrim(convert(varchar(15),@dens))+''''%'''' + char(13) +  ''''dbcc updateusage ([''''+db_name()+''''],''''+ ''''[''''+ @TABLE_SCHEMA + ''''.'''' + rtrim(@tablename) + ''''],['''' + rtrim(@nome_indice) + ''''])'''' + char(13) + ''''update statistics ['''' + @TABLE_SCHEMA + ''''].'''' + ''''[''''+ rtrim(@tablename) + ''''] ['''' + rtrim(@nome_indice) + ''''] with fullscan'''' + char(13)+ '''';''''  
+   fetch next from indexes into @tablename, @TABLE_SCHEMA,@ObjectId, @indexid, @frag, @dens    
+end    
+close indexes    
+deallocate indexes  
+insert into #resultado_frag_lista_de_comandos_para_otimizacao     
+select distinct ''''exec sp_recompile ['''' + TABLE_SCHEMA COLLATE DATABASE_DEFAULT + ''''.'''' + rtrim (ObjectName) COLLATE DATABASE_DEFAULT + '''']'''' resultado_frag from #tabela_framentacao_acima_10_densidade_abaixo_70  tbl_frg, INFORMATION_SCHEMA.TABLES tbl (nolock) where (LogicalFrag >= @maxfrag or ScanDensity < @mindens)  and indexproperty (ObjectId, IndexName, ''''indexdepth'''') > 0 and tbl_frg.ObjectName COLLATE DATABASE_DEFAULT = tbl.table_name COLLATE DATABASE_DEFAULT and tbl.TABLE_TYPE = ''''BASE TABLE''''  COLLATE DATABASE_DEFAULT  
+DECLARE @comando varchar(8000)    
+DECLARE @comando_header varchar(8000)    
+DECLARE tnames_cursor CURSOR FOR     
+select ltrim (des_comando) resultado_frag from #resultado_frag_lista_de_comandos_para_otimizacao order by des_comando    
+OPEN tnames_cursor    
+FETCH NEXT FROM tnames_cursor INTO @comando    
+WHILE (@@fetch_status <> -1)    
+BEGIN    
+ IF (@@fetch_status <> -2)    
+ BEGIN  SET @comando_header = RTRIM(UPPER(@comando))    
+  PRINT @comando_header    
+         EXEC (@comando)    
+ END    
+ FETCH NEXT FROM tnames_cursor INTO @comando    
+END    
+SELECT @comando_header = ''''*NO MORE TABLES'''' + ''''  *''''  
+PRINT @comando_header    
+PRINT ''''Statistics have been updated for all tables.''''+char(13)    
+DEALLOCATE tnames_cursor  
+drop table #tabela_framentacao_acima_10_densidade_abaixo_70    
+drop table #resultado_frag_lista_de_comandos_para_otimizacao')  
+  
+--select len (@proc_text)  
+  
+IF OBJECT_ID('tempdb..#database') IS NOT NULL   
+drop table #database  
+  
+select name into #database from master..sysdatabases where name not in ('model','master','tempdb') and databasepropertyex(name, 'Updateability') <> 'READ_ONLY' and cmptlevel <> 65
+  
+--select name into #database from sysdatabases where name  in ('bd_xss')  
+  
+select * from #database  
+  
+declare @dbname varchar(200)  
+  
+while (select count(*) from #database) <> 0  
+  
+begin  
+  
+select top 1 @dbname = name from #database  
+  
+print @dbname  
+  
+IF OBJECT_ID('tempdb..#sysobjects') IS NOT NULL   
+drop table #sysobjects  
+--drop table #sysobjects  
+  
+SELECT TOP 0 name INTO #sysobjects FROM [sysobjects]  
+  
+INSERT INTO #sysobjects  
+  EXEC('USE [' + @dbname + '] SELECT name FROM [sysobjects] where type = ''P''')  
+  
+  --select * from  #sysobjects  
+  
+  IF NOT EXISTS(SELECT * FROM #sysobjects WHERE [name] = N'spu_otimizacao_necessaria')  
+        BEGIN  
+  
+   DECLARE @sql varchar(8000)  
+   SET @sql = 'USE [' + @dbname + ']; EXEC ('' ' + @proc_text + ''');'  
+  
+   --print @sql 
+   PRINT 'Procedure created in database: ' + @DBName + ''''   
+      
+   --EXEC sp_Executesql   
+   exec(@sql)  
+      
+   END  
+  ELSE  
+   PRINT 'Procedure already exists in database: ' + @DBName + ''''  
+  
+   delete from #database where name = @dbname  
+  end  
+  
+print @dbname  
+
+go
+
+use master
+go
+
+create proc [dbo].[spu_otimizacao_necessaria_todos_bancos] as    
+    
+/*  This procedure will check all users databases    */    
+--use master    
+DECLARE @DatabaseName varchar(200)        
+DECLARE @Mensagem varchar(300)        
+DECLARE @CmdLine varchar(250)    
+--    
+DECLARE DBNames_cursor CURSOR FOR     
+        select name from master..sysdatabases (nolock) where name not in ('master','model','tempdb') 
+		and databasepropertyex(name, 'Updateability') <> 'READ_ONLY'  and cmptlevel <> 65		
+		Order by Name --Exclui bancos de sistemas, banco em Read-Only e bancos 6.5
+OPEN DBNames_cursor    
+FETCH NEXT FROM DBNames_cursor INTO @DatabaseName    
+WHILE (@@fetch_status <> -1)    
+  BEGIN    
+    IF (@@fetch_status <> -2)    
+      BEGIN    
+ Select @Mensagem = 'Verificando o Banco ' + RTRIM(UPPER(@DatabaseName))    
+ PRINT @Mensagem    
+        Select @CmdLine = 'exec [' + @DatabaseName + '].dbo.spu_otimizacao_necessaria'    
+ print @cmdline    
+        EXEC (@CmdLine)    
+      END    
+    FETCH NEXT FROM DBNames_cursor INTO @DatabaseName    
+  END    
+PRINT ' '    
+PRINT ' '    
+SELECT @Mensagem = '*************  NO MORE DATABASES *************'    
+PRINT @Mensagem    
+    
+PRINT ' '    
+PRINT 'Todos bancos de dados foram reorganizados'
+DEALLOCATE DBNames_cursor    
+
+GO
+
+
+use master
+go
+
+ 
+          
+create procedure [dbo].[spu_envia_alerta_sucesso_otimizacao_necessaria_gerenciabd]                        
+as                        
+    
+DECLARE       
+  @ChkSrvName varchar(128)     /*Stores Server Name*/      
+  ,@PhysicalSrvName VARCHAR(128)    /*Stores physical name*/      
+  ,@TrueSrvName varchar(128)     /*Stores Full Name*/      
+      
+SET @PhysicalSrvName = CAST(SERVERPROPERTY('MachineName') AS VARCHAR(128))       
+set @ChkSrvName = CAST(SERVERPROPERTY('INSTANCENAME') AS VARCHAR(128))       
+      
+IF @ChkSrvName IS NULL        /*Detect default or named instance*/      
+ BEGIN       
+  SET @TrueSrvName = @PhysicalSrvName      
+ END       
+ELSE      
+ BEGIN      
+  SET @TrueSrvName =  @PhysicalSrvName +'\' + @ChkSrvName      
+        
+ END       
+         
+declare @servidor_monitorado varchar(200)      
+SET  @servidor_monitorado = @TrueSrvName      
+    
+  
+update [SICLASTANDBY\SBY].[BD_XRP].[dbo].[monitor_otimizacao_necessaria] set [idc_ultima_execucao] = 'N' where cod_servidor = @servidor_monitorado  
+  
+INSERT INTO [SICLASTANDBY\SBY].[BD_XRP].[dbo].[monitor_otimizacao_necessaria]  
+           ([cod_servidor]  
+           ,[tip_evento]  
+           ,[dat_ultima_verificacao]  
+           ,[idc_ultima_execucao])  
+     VALUES  
+           (@servidor_monitorado  
+           ,'Sucesso_Otimização'  
+           ,getdate()  
+          ,'S')  
+  
+
+go
+
+  
+            
+create procedure [dbo].[spu_envia_alerta_falha_otimizacao_necessaria_gerenciabd]                          
+as                          
+      
+DECLARE         
+  @ChkSrvName varchar(128)     /*Stores Server Name*/        
+  ,@PhysicalSrvName VARCHAR(128)    /*Stores physical name*/        
+  ,@TrueSrvName varchar(128)     /*Stores Full Name*/        
+        
+SET @PhysicalSrvName = CAST(SERVERPROPERTY('MachineName') AS VARCHAR(128))         
+set @ChkSrvName = CAST(SERVERPROPERTY('INSTANCENAME') AS VARCHAR(128))         
+        
+IF @ChkSrvName IS NULL        /*Detect default or named instance*/        
+ BEGIN         
+  SET @TrueSrvName = @PhysicalSrvName        
+ END         
+ELSE        
+ BEGIN        
+  SET @TrueSrvName =  @PhysicalSrvName +'\' + @ChkSrvName        
+          
+ END         
+           
+declare @servidor_monitorado varchar(200)        
+SET  @servidor_monitorado = @TrueSrvName        
+      
+declare @mensagem varchar(2500),                          
+  @destinatario varchar(200),  -- Anyole Almeida - 27/10/2011                          
+  @des_assunto_pre varchar(2000)                    
+                          
+select @mensagem = 'Verificar a Rotina de Otimização Necessária no Servidor       : '+ @servidor_monitorado +char(13)+char(13)      
++'Favor responder esse correio após solucionar o problema. ' + char(13) + char(13) +       
+'As logs do job <<MANUTENÇÃO - Otimização necessária de todos os bancos>> ficam no drive c:\spu_create_otimizacao_necessaria_todos_bancos.log'                
+                
+set @destinatario = (select des_email_responsavel from [SICLASTANDBY\SBY].BD_XRP.DBO.SERVIDOR where cod_servidor = @servidor_monitorado) -- Acrescentado Anyole Almeida 27/10/2011                          
+                    
+      
+set @des_assunto_pre = 'Falha na Rotina de Otimização Necessária do Servidor: ' + @servidor_monitorado         
+      
+print @des_assunto_pre      
+      
+print @mensagem      
+    
+                  
+IF (@destinatario = 'ACO - Tecnologia da Informacao - Sistemas Industriais;ACO - DBA Corporativo')                       
+Begin         
+exec [SICLASTANDBY\SBY].BD_XRP.dbo.spu_envia_mensagem_correio @des_email_remetente = 'Admin do SQL',@des_email_destino = 'anyole.almeida@gerdau.com.br;gilberto.rosa@gerdau.com.br',@des_assunto = @des_assunto_pre, @des_mensagem = @mensagem      
+End                          
+           
+Else                          
+begin         
+exec [SICLASTANDBY\SBY].BD_XRP.dbo.spu_envia_mensagem_correio @des_email_remetente = 'Admin do SQL',@des_email_destino = 'anyole.almeida@gerdau.com.br;gilberto.rosa@gerdau.com.br',@des_assunto = @des_assunto_pre, @des_mensagem = @mensagem      
+end                          
+    
+update [SICLASTANDBY\SBY].[BD_XRP].[dbo].[monitor_otimizacao_necessaria] set [idc_ultima_execucao] = 'N' where cod_servidor = @servidor_monitorado  
+  
+INSERT INTO [SICLASTANDBY\SBY].[BD_XRP].[dbo].[monitor_otimizacao_necessaria]    
+           ([cod_servidor]    
+           ,[tip_evento]    
+           ,[dat_ultima_verificacao]    
+           ,[idc_ultima_execucao])    
+     VALUES    
+           (@servidor_monitorado    
+           ,'Falha_Otimização'    
+           ,getdate()    
+          ,'S')    
+
+
+go
+
+
+USE [msdb]
+GO
+/****** Object:  Job [MANUTENÇÃO - Otimização necessária de todos os bancos]    Script Date: 09/24/2012 14:23:20 ******/
+IF  EXISTS (SELECT job_id FROM msdb.dbo.sysjobs_view WHERE name = N'MANUTENÇÃO - Otimização necessária de todos os bancos')
+EXEC msdb.dbo.sp_delete_job @job_name=N'MANUTENÇÃO - Otimização necessária de todos os bancos'
+
+go
+
+
+USE [msdb]
+GO
+/****** Object:  Job [MANUTENÇÃO - Otimização necessária de todos os bancos]    Script Date: 07/09/2013 12:22:49 ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [[Uncategorized (Local)]]]    Script Date: 07/09/2013 12:22:49 ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'MANUTENÇÃO - Otimização necessária de todos os bancos', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [exec spu_create_otimizacao_necessaria_todos_bancos]    Script Date: 07/09/2013 12:22:49 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'exec spu_create_otimizacao_necessaria_todos_bancos', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=4, 
+		@on_success_step_id=3, 
+		@on_fail_action=4, 
+		@on_fail_step_id=2, 
+		@retry_attempts=3, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'SET LOCK_TIMEOUT 300000 --5 minutos (em milisegundos) locada irá finalizar automaticamente evitando chamados e/ou acionamentos.
+;
+exec spu_create_otimizacao_necessaria_todos_bancos
+;
+exec spu_otimizacao_necessaria_todos_bancos', 
+		@database_name=N'master', 
+		@output_file_name=N'c:\spu_create_otimizacao_necessaria_todos_bancos.log', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_envia_alerta_falha_otimizacao_necessaria_gerenciabd]    Script Date: 07/09/2013 12:22:49 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_envia_alerta_falha_otimizacao_necessaria_gerenciabd', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'exec [spu_envia_alerta_falha_otimizacao_necessaria_gerenciabd]', 
+		@database_name=N'master', 
+		@output_file_name=N'C:\spu_envia_alerta_falha_otimizacao_necessaria_gerenciabd.txt', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_envia_alerta_sucesso_otimizacao_necessaria_gerenciabd]    Script Date: 07/09/2013 12:22:50 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_envia_alerta_sucesso_otimizacao_necessaria_gerenciabd', 
+		@step_id=3, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'exec [spu_envia_alerta_sucesso_otimizacao_necessaria_gerenciabd]', 
+		@database_name=N'master', 
+		@output_file_name=N'C:\spu_envia_alerta_sucesso_otimizacao_necessaria_gerenciabd.txt', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'Almoço', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20120829, 
+		@active_end_date=99991231, 
+		@active_start_time=220000, 
+		@active_end_time=235959
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+	IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+
+go
+
+declare @servidormonitorado varchar(1000)
+set @servidormonitorado = (select @@servername)
+
+if not exists (select * from [SICLASTANDBY\SBY].BD_XRP.DBO.servidor where cod_servidor like @servidormonitorado)
+begin
+      INSERT INTO [SICLASTANDBY\SBY].BD_XRP.DBO.SERVIDOR ([cod_servidor],[des_servidor],[tip_ambiente],[dat_atualiza],[tip_servidor],[idc_coleta_cpu],
+      [qtess_sla_trace],[qtess_sla_performance],[cod_responsav],[idc_prioridade_ativo],[idc_ativo],[idc_monitora_disco],[idc_monitora_job],
+      [idc_monitora_backup], idc_otimizacao_necessaria)
+      VALUES(@servidormonitorado,'SERVIDOR DE BANCO DE DADOS - TI LOCAL','PRODUÇÃO',getDate(),'SQL',NULL,NULL,NULL,NULL,NULL,'S','S','S',NULL, 'S')
+
+      update [SICLASTANDBY\SBY].BD_XRP.DBO.servidor set qtess_sla_trace = 3.000, qtess_sla_performance = 30.000
+      where cod_servidor like @servidormonitorado
+end
+
+else
+begin
+update [SICLASTANDBY\SBY].BD_XRP.DBO.servidor set idc_otimizacao_necessaria = 'S'
+      where cod_servidor like @servidormonitorado
+
+end
