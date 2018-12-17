@@ -1,0 +1,706 @@
+
+use master
+go
+
+declare @caminho_backup varchar(2000)
+set @caminho_backup ='G:\BackupFiles\'
+
+-- Script para criar spu_backup_full
+
+DECLARE @cmd_full varchar(8000)
+
+
+set @cmd_full = 'CREATE procedure [dbo].[spu_backup_full]                       
+ @database nvarchar(500) = null                                        
+as                      
+                        
+declare @device  nvarchar(2000)                                
+declare @pathbackup nvarchar(2000)                                
+declare @cmdcrtdev nvarchar(2000)                                
+declare @cmddrpdev nvarchar(2000)                                
+declare @cmdbkp  nvarchar(2000)                                            
+declare @table table (database_name varchar(500))                   
+declare @excecao table (database_name varchar(500))                  
+                                
+--determina path do diretório para backup                                
+set @pathbackup = '''+ @caminho_backup + '''      --Caso esta linha for alterada deverá alterar a abaixo seguindo o padrão                                
+                    
+-- determina os bancos de excecao                  
+insert into @excecao                  
+select name from sysdatabases where name in (''tempdb'',''Northwind'',''pubs'')  
+or (databasepropertyex(name, ''STATUS'') =  ''RESTORING'') 
+or (DATABASEPROPERTYEX(name, ''IsInStandBy'') = 1)                
+                  
+                  
+                  
+-- verifica se o parametro banco foi informado, se não executa para todos os bancos                      
+if @database is not null                      
+ begin                       
+  insert into @table                      
+  select name from sysdatabases where name = @database                      
+ end                      
+else                      
+ begin                       
+  insert into @table                      
+  select name from sysdatabases where name not in (select database_name from @excecao)                  
+ end                      
+                    
+------------                                
+declare devices cursor for                                
+select name from sysdevices                              
+open devices                                
+fetch next from devices into @device                                
+while @@fetch_status = 0                                
+ begin                                  
+  --apaga device não necessários                                
+  select @cmddrpdev = ''sp_dropdevice ''''''+name+'''''', delfile;''                                
+  from sysdevices where name not like ''BkpLG%''                                
+  and name not in (select ''Bkp''+name from sysdatabases)                                 
+  and name not in (select ''Bkp''+name+''Diff'' from sysdatabases)
+  and name not in (''master'',''mastlog'',''modeldev'',''modellog'',''tempdev'',''templog'',''R3DUMP0'',''R3DUMP1'',''R3DUMP2'')                               
+  and name = @device                                  
+  print @cmddrpdev                      
+  exec(@cmddrpdev)                                
+  fetch next from devices into @device                                
+ end                                
+close devices                                
+deallocate devices                                   
+-----------------------                    
+                    
+declare databases cursor for                                    
+select database_name from @table                           
+open databases                                        
+fetch next from databases                                
+into @database                                
+while @@fetch_status = 0                                
+ begin                                
+  --cria device de backup full para database se não existe                                
+  select @cmdcrtdev = ''if not exists (select 1 from sysdevices where name = ''''Bkp''+name+'''''')''+char(13)+''exec sp_addumpdevice ''''disk'''', ''''Bkp''+name+'''''', ''''''+@pathbackup+''Bkp''+name+''.bak''''''+'';'',                                
+  @cmdbkp  = ''backup database [''+name+''] to [Bkp''+name+''] with format,stats=1;''                              
+
+
+  from sysdatabases where name = @database
+                 
+  exec(@cmdcrtdev)                                
+  print ''Inicio do Backup do Database: ''+@database+ '' - '' +cast(getdate() as varchar)                       
+  print @cmdbkp                            
+  exec(@cmdbkp)                        
+  print ''Fim do Backup do Database: ''+@database+ '' - '' +cast(getdate() as varchar)                                
+  print ''''                                
+  fetch next from databases into @database                                
+ end                                
+close databases                                
+deallocate databases '
+
+
+print @cmd_full
+
+EXEC (@cmd_full)
+
+
+
+-- Script para criar procedure spu_backup_diff
+
+DECLARE @cmd_diff varchar(8000)
+
+set @cmd_diff = 'create procedure [dbo].[spu_backup_diff]  
+  @database nvarchar(500)= null  
+as  
+declare @device  nvarchar(2000)          
+declare @pathbackup nvarchar(2000)          
+declare @cmdcrtdev nvarchar(2000)          
+declare @cmddrpdev nvarchar(2000)          
+declare @cmdbkp  nvarchar(2000)              
+declare @table table (database_name varchar(500))   
+declare @excecao table (database_name varchar(500))  
+          
+--determina path do diretório para backup          
+
+set @pathbackup = '''+ @caminho_backup + ''' --Caso esta linha for alterada deverá alterar a abaixo seguindo o padrão          
+  
+-- determina os bancos de excecao  
+insert into @excecao  
+select name from sysdatabases where name in (''tempdb'', ''master'', ''msdb'', ''model'', ''pubs'',''Northwind'') 
+or (databasepropertyex(name, ''STATUS'') =  ''RESTORING'') 
+or (DATABASEPROPERTYEX(name, ''IsInStandBy'') = 1) 
+  
+-- verifica se o parametro banco foi informado, se não executa para todos os bancos    
+if @database is not null    
+ begin     
+  insert into @table    
+  select name from sysdatabases where name = @database    
+ end    
+else    
+ begin     
+  insert into @table    
+  select name from sysdatabases where name not in (select database_name from @excecao)                    
+ end        
+  
+--------------------------------  
+      
+declare devices cursor for          
+select name from sysdevices        
+open devices          
+fetch next from devices into @device          
+while @@fetch_status = 0          
+ begin            
+  --apaga device não necessários          
+  select @cmddrpdev = ''sp_dropdevice ''''''+name+'''''', delfile;''          
+  from sysdevices where name not like ''BkpLG%''          
+  and name not in (select ''Bkp''+name from sysdatabases)           
+  and name not in (select ''Bkp''+name+''Diff'' from sysdatabases)
+	--and name not in (''master'',''mastlog'',''modeldev'',''modellog'',''tempdev'',''templog'')           
+  and name not in (''master'',''mastlog'',''modeldev'',''modellog'',''tempdev'',''templog'',''R3DUMP0'',''R3DUMP1'',''R3DUMP2'') 
+  and name = @device            
+  exec(@cmddrpdev)          
+  fetch next from devices into @device          
+ end          
+close devices          
+deallocate devices     
+----  
+              
+declare databases cursor for                  
+select database_name from @table         
+open databases        
+fetch next from databases          
+into @database                  
+while @@fetch_status = 0          
+ begin            
+  --cria device de backup diferencial para database se não existe          
+  select @cmdcrtdev = ''if not exists (select 1 from sysdevices where name = ''''Bkp''+name+''Diff'''')''+char(13)+''exec sp_addumpdevice ''''disk'''', ''''Bkp''+name+''Diff'''', ''''''+@pathbackup+''Bkp''+name+''Diff.bak''''''+'';'',          
+  @cmdbkp  = ''backup database [''+name+''] to [Bkp''+name+''Diff] with differential, format, stats=1;''        
+  from sysdatabases where name = @database          
+  exec(@cmdcrtdev)          
+  print ''Inicio do Backup do Database: ''+@database+ '' - '' +cast(getdate() as varchar)          
+  exec(@cmdbkp)   
+  print ''Fim do Backup do Database: ''+@database+ '' - '' +cast(getdate() as varchar)          
+  print ''''          
+  fetch next from databases          
+  into @database          
+ end          
+close databases          
+deallocate databases' 
+
+
+
+print @cmd_diff
+
+EXEC (@cmd_diff)
+
+-- Script para criar procedure spu_backup_log_init
+
+DECLARE @cmd_log_init varchar(8000)
+
+set @cmd_log_init = 
+'create proc spu_backup_log_init
+ @Database varchar(500)= null        
+as          
+          
+-- declarando varíaveis          
+declare @Name varchar(500)          
+declare @Device  varchar(2000)          
+declare @QualDevice  varchar(2000)          
+declare @CreateDevice varchar(2000)          
+declare @ComandoBkp  varchar(2000)          
+declare @ComandoDrop varchar(2000)          
+declare @ComandoDrop2 varchar(2000)          
+declare @ComandoDrop3 varchar(2000)          
+declare @ComandoDrop4 varchar(2000)          
+declare @ComandoDrop5 varchar(2000)          
+declare @QualDisco   varchar(99)          
+declare @QualDia     integer          
+declare @table table (database_name varchar(500), recoverymode varchar(20))      
+declare @excecao table (database_name varchar(500))  
+      
+-- define o local de criação dos Devices          
+    
+set @QualDisco = '''+ @caminho_backup + '''
+  
+-- determina os bancos de excecao  
+insert into @excecao  
+select name from sysdatabases where name in (''master'',''msdb'',''model'',''tempdb'',''Northwind'') 
+or (databasepropertyex(name, ''STATUS'') =  ''RESTORING'') 
+or (DATABASEPROPERTYEX(name, ''IsInStandBy'') = 1) 
+  
+      
+-- verifica se o parametro banco foi informado, se não executa para todos os bancos      
+if @Database is not null      
+ begin       
+  insert into @table      
+  select name, cast (databasepropertyex(name, ''Recovery'')as varchar) as RecoveryMode       
+  from sysdatabases where name = @Database      
+  and databasepropertyex(name, ''Recovery'') <> ''SIMPLE''        
+ end      
+else      
+ begin       
+  insert into @table      
+  select name, cast (databasepropertyex(name, ''Recovery'')as varchar) as RecoveryMode       
+  from sysdatabases where name not in (select database_name from @excecao)          
+  and databasepropertyex(name, ''Recovery'') <> ''SIMPLE''        
+ end      
+            
+-- listando os bancos de usuário que estão no recovery mode full e são bancos de usuário        
+declare databases cursor for                    
+select database_name from @table           
+open databases                    
+fetch next from databases into @Database                    
+while @@fetch_status = 0                    
+ begin                      
+  if LEFT(@Database,3) = ''BD_''          
+   select @Name = substring(@Database,4,LEN(@Database))           
+  else          
+   set @Name = @Database          
+  set @Device = ''BkpLG_''+ @Name          
+-- set @Device = "BkpLG_"+ @Name          
+-- removendo os devices anteriores a 2 dias        
+  if exists (select name from sysdevices where name like '''' + @Device + '''' + left( datename(weekday,getdate()-6),3))           
+   begin          
+
+
+	select @ComandoDrop = ''sp_dropdevice @logicalname = '''''' + @Device + left( datename(weekday,getdate()-6),3) 
+    select @ComandoDrop = @ComandoDrop +  + '''''', @delfile = ''''delfile''''''
+
+	--  select @ComandoDrop = "sp_dropdevice @logicalname = ''" + @Device + left( datename(weekday,getdate()-6),3)              
+	--  select @ComandoDrop = @ComandoDrop + "'', @delfile = ''delfile''"          
+    EXECUTE  (@ComandoDrop)          
+    print @ComandoDrop        
+   End          
+  if exists (select name from sysdevices where name like '''' + @Device + '''' + left( datename(weekday,getdate()-5),3))           
+   begin          
+	select @ComandoDrop2 = ''sp_dropdevice @logicalname = '''''' + @Device + left( datename(weekday,getdate()-5),3) 
+    select @ComandoDrop2 = @ComandoDrop2 +  + '''''', @delfile = ''''delfile''''''
+
+--    select @ComandoDrop2 = "sp_dropdevice @logicalname = ''" + @Device + left( datename(weekday,getdate()-5),3)              
+  --  select @ComandoDrop2 = @ComandoDrop2 + "'', @delfile = ''delfile''"          
+    EXECUTE  (@ComandoDrop2)          
+    print @ComandoDrop2        
+   end          
+  if exists (select name from sysdevices where name like '''' + @Device + '''' + left( datename(weekday,getdate()-4),3))           
+   begin
+	select @ComandoDrop3 = ''sp_dropdevice @logicalname = '''''' + @Device + left( datename(weekday,getdate()-4),3) 
+    select @ComandoDrop3 = @ComandoDrop3 +  + '''''', @delfile = ''''delfile''''''
+    --select @ComandoDrop3 = "sp_dropdevice @logicalname = ''" + @Device + left( datename(weekday,getdate()-4),3)              
+    --select @ComandoDrop3 = @ComandoDrop3 + "'', @delfile = ''delfile''"          
+    EXECUTE  (@ComandoDrop3)          
+    print @ComandoDrop3        
+   end          
+  if exists (select name from sysdevices where name like '''' + @Device + ''''  + left( datename(weekday,getdate()-3),3))           
+   begin          
+
+
+	select @ComandoDrop4 = ''sp_dropdevice @logicalname = '''''' + @Device + left( datename(weekday,getdate()-3),3) 
+    select @ComandoDrop4 = @ComandoDrop4 +  + '''''', @delfile = ''''delfile''''''
+    
+    --select @ComandoDrop4 = "sp_dropdevice @logicalname = ''" + @Device + left( datename(weekday,getdate()-3),3)              
+    --select @ComandoDrop4 = @ComandoDrop4 + "'', @delfile = ''delfile''"          
+    EXECUTE  (@ComandoDrop4)          
+    print @ComandoDrop4        
+     end          
+  if exists (select name from sysdevices where name like '''' + @Device + '''' + left( datename(weekday,getdate()-2),3))           
+   begin          
+   
+	select @ComandoDrop5 = ''sp_dropdevice @logicalname = '''''' + @Device + left( datename(weekday,getdate()-2),3) 
+    select @ComandoDrop5 = @ComandoDrop5 +  + '''''', @delfile = ''''delfile''''''
+
+--select @ComandoDrop5 = "sp_dropdevice @logicalname = ''" + @Device + left( datename(weekday,getdate()-2),3)              
+  --  select @ComandoDrop5 = @ComandoDrop5 + "'', @delfile = ''delfile''"
+    EXECUTE  (@ComandoDrop5)          
+    print @ComandoDrop5        
+   end          
+        
+-- criando o device do dia        
+  set @QualDevice = @Device + left( datename(weekday,getdate()),3)      
+  if not exists (select name from sysdevices where name like '''' + @Device + '''' + left( datename(weekday,getdate()),3))      
+ begin      
+  set @CreateDevice = ''sp_addumpdevice ''''disk'''','''''' + @QualDevice + '''''',''''''           
+  set @CreateDevice = @CreateDevice + @QualDisco + @QualDevice + ''.bak''''''          
+
+  --set @CreateDevice = "sp_addumpdevice " + "''disk,''" + @QualDevice + "'', ''"           
+  --set @CreateDevice = @CreateDevice + @QualDisco + @QualDevice + ".bak''"          
+  print @CreateDevice          
+  EXECUTE  (@CreateDevice)          
+ end      
+       
+-- executando o backup de log           
+ --set @ComandoBkp = "backup transaction " + @Database + " to " + @QualDevice + " with"          
+ --select @ComandoBkp = @ComandoBkp + " init, nounload, noskip, stats=1"          
+
+ set @ComandoBkp = ''backup log ['' + @Database + ''] to ['' + @QualDevice + ''] with''          
+ select @ComandoBkp = @ComandoBkp + '' format, nounload, stats=1''          
+
+
+ print @ComandoBkp        
+ EXECUTE  (@ComandoBkp)          
+         
+ fetch next from databases into @Database                  
+end                    
+close databases                    
+deallocate databases 
+'
+
+print @cmd_log_init
+
+EXEC (@cmd_log_init)
+
+
+-- Script para criar procedure spu_backup_log_noinit
+
+DECLARE @cmd_backup_log_noinit varchar(8000)
+
+set @cmd_backup_log_noinit = 
+'create proc spu_backup_log_noinit
+ @Database varchar(500)= null      
+as        
+        
+-- declarando varíaveis        
+declare @Name varchar(500)        
+declare @Device  varchar(2000)        
+declare @QualDevice  varchar(2000)        
+declare @CreateDevice varchar(2000)        
+declare @ComandoBkp  varchar(2000)        
+declare @QualDisco   varchar(99)        
+declare @QualDia     integer        
+declare @table table (database_name varchar(500), recoverymode varchar(25))    
+declare @excecao table (database_name varchar(500))  
+    
+-- define o local de criação dos Devices        
+
+set @QualDisco = '''+ @caminho_backup + '''     
+  
+-- determina os bancos de excecao  
+insert into @excecao  
+select name from sysdatabases where name in (''master'',''msdb'',''model'',''tempdb'',''pubs'',''Northwind'') 
+or (databasepropertyex(name, ''STATUS'') =  ''RESTORING'') 
+or (DATABASEPROPERTYEX(name, ''IsInStandBy'') = 1) 
+  
+    
+-- verifica se o parametro banco foi informado, se não executa para todos os bancos    
+if @Database is not null    
+ begin     
+  insert into @table    
+  select name, cast (databasepropertyex(name, ''Recovery'')as varchar) as RecoveryMode     
+  from sysdatabases where name = @Database    
+  and databasepropertyex(name, ''Recovery'') <> ''SIMPLE''      
+ end    
+else    
+ begin     
+  insert into @table    
+  select name, cast (databasepropertyex(name, ''Recovery'')as varchar) as RecoveryMode     
+  from sysdatabases where name not in (select database_name from @excecao)         
+  and databasepropertyex(name, ''Recovery'') <> ''SIMPLE''      
+ end    
+             
+-- listando os bancos de usuário que estão no recovery mode full e são bancos de usuário      
+declare databases cursor for                  
+select database_name from @table         
+open databases                         
+fetch next from databases into @Database                  
+while @@fetch_status = 0                  
+ begin                    
+  if LEFT(@Database,3) = ''BD_''        
+   select @Name = substring(@Database,4,LEN(@Database))         
+  else        
+   set @Name = @Database        
+   set @Device = ''BkpLG_''+ @Name        
+   set @QualDevice = @Device + left( datename(weekday,getdate()),3)        
+   set @ComandoBkp = ''backup log ['' + @Database + ''] to ['' + @QualDevice + ''] with''        
+   select @ComandoBkp = @ComandoBkp + '' noinit, nounload, stats=1''        
+-- executando o backup de log          
+ print @ComandoBkp    
+ EXECUTE  (@ComandoBkp)        
+ fetch next from databases into @Database                
+end                  
+close databases                  
+deallocate databases'
+
+print @cmd_backup_log_noinit
+
+EXEC (@cmd_backup_log_noinit)
+
+
+go
+
+USE [msdb]
+GO
+
+/****** Object:  Job [MANUTENÇÃO - BACKUP FULL DATABASES]    Script Date: 05/30/2012 09:30:28 ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [[Uncategorized (Local)]]]    Script Date: 05/30/2012 09:30:28 ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'MANUTENÇÃO - BACKUP FULL DATABASES', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=2, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'Executa o backup full dos databases inlcuindo de sistema', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@owner_login_name=N'sa', 
+		--@notify_email_operator_name=N'ACO_dbacorporativo',
+		@job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_backup_full]    Script Date: 05/30/2012 09:30:28 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_backup_full', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=3, 
+		@retry_interval=1, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'exec spu_backup_full', 
+		@database_name=N'master', 
+		--@output_file_name=N'F:\MSSQL10_50.MSSQLSERVER\MSSQL\Log\spu_backup_full.log', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_backup_log_init]    Script Date: 05/30/2012 09:30:28 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_backup_log_init', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=3, 
+		@retry_interval=1, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'EXEC msdb.dbo.sp_start_job ''MANUTENÇÃO - BACKUP LOG INIT DATABASES''', 
+		@database_name=N'msdb', 
+		--@output_file_name=N'F:\MSSQL10_50.MSSQLSERVER\MSSQL\Log\spu_backup_log_init.log', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'executa_spu_backup_full', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20120301, 
+		@active_end_date=99991231, 
+		@active_start_time=0, 
+		@active_end_time=235959 
+		--@schedule_uid=N'286461ae-26c2-49cf-9edf-a93fc855aa8a'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+USE [msdb]
+GO
+
+/****** Object:  Job [MANUTENÇÃO - BACKUP DIFERENCIAL DATABASES]    Script Date: 05/30/2012 09:30:22 ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [[Uncategorized (Local)]]]    Script Date: 05/30/2012 09:30:22 ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'MANUTENÇÃO - BACKUP DIFERENCIAL DATABASES', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=2, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'Executa o backup diferencial dos databases de usuário.', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@owner_login_name=N'sa', 
+		--@notify_email_operator_name=N'ACO_dbacorporativo',
+		@job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_backup_diff]    Script Date: 05/30/2012 09:30:22 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_backup_diff', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=3, 
+		@retry_interval=1, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'exec spu_backup_diff', 
+		@database_name=N'master', 
+		--@output_file_name=N'F:\MSSQL10_50.MSSQLSERVER\MSSQL\Log\spu_backup_diff.log', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'executa_spu_backup_diff', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20120301, 
+		@active_end_date=99991231, 
+		@active_start_time=120000, 
+		@active_end_time=235959 
+		--@schedule_uid=N'5112586f-6dd9-4d7e-8a50-7bb3abe5ad4a'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+
+USE [msdb]
+GO
+
+/****** Object:  Job [MANUTENÇÃO - BACKUP LOG INIT DATABASES]    Script Date: 05/30/2012 09:30:33 ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [[Uncategorized (Local)]]]    Script Date: 05/30/2012 09:30:34 ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'MANUTENÇÃO - BACKUP LOG INIT DATABASES', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=2, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'Executa o backup INIT dos logs dos bancos em recovery mode full ( é acionado após o backup full)', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@owner_login_name=N'sa', 
+		--@notify_email_operator_name=N'ACO_dbacorporativo',
+		@job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_backup_log_init]    Script Date: 05/30/2012 09:30:34 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_backup_log_init', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=3, 
+		@retry_interval=1, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'exec spu_backup_log_init', 
+		@database_name=N'master', 
+		--@output_file_name=N'F:\MSSQL10_50.MSSQLSERVER\MSSQL\Log\spu_backup_log_init.log', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+USE [msdb]
+GO
+
+/****** Object:  Job [MANUTENÇÃO - BACKUP LOG NOINIT DATABASES]    Script Date: 05/30/2012 09:30:39 ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [[Uncategorized (Local)]]]    Script Date: 05/30/2012 09:30:39 ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'MANUTENÇÃO - BACKUP LOG NOINIT DATABASE', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=2, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'Executa o backup NOINIT dos logs dos bancos em recovery mode full ( lógica checa se a hora é diferente de 0)', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@owner_login_name=N'sa', 
+		--@notify_email_operator_name=N'ACO_dbacorporativo',
+		@job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [MANUTENÇÃO - BACKUP LOG NOINIT DATABASES]    Script Date: 05/30/2012 09:30:40 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'MANUTENÇÃO - BACKUP LOG NOINIT DATABASES', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=3, 
+		@retry_interval=1, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'exec spu_backup_log_noinit', 
+		@database_name=N'master', 
+		--@output_file_name=N'F:\MSSQL10_50.MSSQLSERVER\MSSQL\Log\spu_backup_log_noinit.log', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'executa_spu_backup_log_noinit', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=8, 
+		@freq_subday_interval=1, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20120301, 
+		@active_end_date=99991231, 
+		@active_start_time=10000, 
+		@active_end_time=235959 
+		--@schedule_uid=N'3c6750e4-d53b-48a0-9b6e-a8b89f2f209d'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
