@@ -1,0 +1,603 @@
+sp_configure 'show advanced options',1
+go
+RECONFIGURE with override
+go
+
+sp_configure 'xp_cmdshell',1
+go
+RECONFIGURE with override
+go
+USE [msdb]
+GO
+
+/****** Object:  Table [dbo].[blocktable]    Script Date: 26/08/2016 14:39:47 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+SET ANSI_PADDING ON
+GO
+
+CREATE TABLE [dbo].[blocktable](
+	[blockedsid] [int] NULL,
+	[blockingsid] [int] NULL,
+	[eventinfo1] [varchar](300) NULL,
+	[eventinfo2] [varchar](300) NULL,
+	[waittime] [int] NULL,
+	[hostname] [varchar](20) NULL,
+	[dat_bloqueio] [datetime] NULL,
+	[program_name1] [varchar](30) NULL,
+	[program_name2] [varchar](30) NULL,
+	[host_blocking] [char](20) NULL
+) ON [PRIMARY]
+
+GO
+
+SET ANSI_PADDING OFF
+GO
+
+/****** Object:  Table [dbo].[trace_dia_geral]    Script Date: 26/08/2016 14:39:47 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+SET ANSI_PADDING ON
+GO
+
+CREATE TABLE [dbo].[trace_dia_geral](
+	[cod_servidor] [varchar](255) NULL,
+	[TextData] [ntext] NULL,
+	[DatabaseID] [int] NULL,
+	[NTUserName] [nvarchar](128) NULL,
+	[HostName] [nvarchar](128) NULL,
+	[ApplicationName] [nvarchar](128) NULL,
+	[LoginName] [nvarchar](128) NULL,
+	[Duration] [bigint] NULL,
+	[StartTime] [datetime] NULL
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+
+GO
+
+SET ANSI_PADDING OFF
+GO
+
+
+
+USE [msdb]
+GO
+
+USE [msdb]
+GO
+
+/****** Object:  StoredProcedure [dbo].[spu_GerenciaBD]    Script Date: 12/18/2018 11:57:14 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+create procedure [dbo].[spu_GerenciaBD] as  
+  
+-- Evitando exibição de registros  
+  
+set nocount on  
+  
+-- Declarando variável para multi-servidor  
+  
+DECLARE @SERVIDOR_MONITORANDO VARCHAR(100)  
+DECLARE @BANCO_MONITORANDO VARCHAR(100)  
+DECLARE @TABELA_TABELA_MONITORANDO VARCHAR(100)  
+DECLARE @SERVIDOR_MONITORADO nvarchar(128)  
+  
+-- Atribuindo variáveis para configuração do GerenciaBD GACO  
+  
+SET  @SERVIDOR_MONITORANDO = (select @@servername)  
+SET  @BANCO_MONITORANDO = 'msdb'  
+SET  @TABELA_TABELA_MONITORANDO = 'TRACE_DIA_GERAL'  
+
+
+DECLARE 
+		@ChkSrvName varchar(128)					/*Stores Server Name*/
+		,@PhysicalSrvName VARCHAR(128)				/*Stores physical name*/
+		,@TrueSrvName varchar(128)					/*Stores Full Name*/
+
+SET @PhysicalSrvName = CAST(SERVERPROPERTY('MachineName') AS VARCHAR(128)) 
+set @ChkSrvName = CAST(SERVERPROPERTY('INSTANCENAME') AS VARCHAR(128)) 
+
+IF @ChkSrvName IS NULL								/*Detect default or named instance*/
+	BEGIN 
+		SET @TrueSrvName = @PhysicalSrvName
+	END 
+ELSE
+	BEGIN
+		SET @TrueSrvName =  @PhysicalSrvName +'\' + @ChkSrvName
+		
+	END 
+
+print @TrueSrvName 
+   
+SET  @SERVIDOR_MONITORADO = @TrueSrvName
+  
+-- Coletando caminho do SQL Server para gravar trace file otimizado, via server trace  
+  
+declare @rc2 int, @dir nvarchar(4000)    
+   
+exec @rc2 = master.dbo.xp_instance_regread   
+      N'HKEY_LOCAL_MACHINE',   
+      N'Software\Microsoft\MSSQLServer\Setup',   
+      N'SQLPath',    
+      @dir output, 'no_output'   
+  
+--select @dir AS InstallationDirectory  
+--PRINT @dir + '\indicador_performance_dia'  
+  
+-- Localizando e finalizando server trace anterior somente do GerenciaBD  
+  
+declare @traceid2 int  
+declare @caminho varchar(1000)  
+declare @caminho2 varchar(1000)  
+  
+set @caminho =  'c:\scripts' + '\indicador_performance_dia'  
+set @caminho2 =  'c:\scripts' + '\indicador_performance_dia.trc'  
+  
+SELECT top 1 @traceid2 = traceid FROM :: fn_trace_getinfo(default) where value = @caminho  
+  
+if @traceid2 is null   
+ SELECT top 1 @traceid2 = traceid FROM :: fn_trace_getinfo(default) where value = @caminho2  
+  
+select @traceid2  
+  
+if @traceid2 is not null   
+begin  
+ EXEC sp_trace_setstatus @traceid2, 0   
+ EXEC sp_trace_setstatus @traceid2, 2  
+  
+  
+  
+-- Definindo comando para contabilização de indicadores do GerenciaBD  
+  
+ DECLARE @COMANDO_INSERT_SERVIDOR_MONITORANDO VARCHAR(8000)  
+
+IF EXISTS (SELECT * FROM dbo.sysobjects WHERE id = OBJECT_ID(N'prodver') AND OBJECTPROPERTY(id, N'IsUserTable') = 1)                                            
+drop table prodver                    
+create table prodver ([index] int, Name nvarchar(50),Internal_value int, Charcater_Value nvarchar(50))                    
+insert into prodver exec master.dbo.xp_msver 'ProductVersion'                    
+
+
+ --if (select substring(Charcater_Value,1,1)from prodver)<= 8 -- Verificando a versão o server trace  
+ 
+  IF 10 <= 8 
+  
+  
+ SET @COMANDO_INSERT_SERVIDOR_MONITORANDO = 'insert into [' +@SERVIDOR_MONITORANDO + ']' + '.' + @BANCO_MONITORANDO + '.DBO.' + @TABELA_TABELA_MONITORANDO +  
+         ' SELECT '+  '''' +@SERVIDOR_MONITORADO +''',textdata, databaseid, ntusername, hostname, applicationname, loginname, duration/1000, starttime   
+      from ::fn_trace_gettable(''' + 'c:\scripts' + '\indicador_performance_dia.trc''' + ', default)'  
+  
+else  
+  
+ SET @COMANDO_INSERT_SERVIDOR_MONITORANDO = 'insert into [' +@SERVIDOR_MONITORANDO + ']' + '.' + @BANCO_MONITORANDO + '.DBO.' + @TABELA_TABELA_MONITORANDO +  
+         ' SELECT '+  '''' +@SERVIDOR_MONITORADO +''',textdata, databaseid, ntusername, hostname, applicationname, loginname, duration/1000000, starttime   
+      from ::fn_trace_gettable(''' + 'c:\scripts' + '\indicador_performance_dia.trc''' + ', default)'  
+
+/*  
+  USE [msdb]
+GO
+
+drop table trace_dia_geral
+go
+
+CREATE TABLE [dbo].[trace_dia_geral](
+	[cod_servidor] [varchar](255) NULL,
+	[TextData] [ntext] NULL,
+	[DatabaseID] [int] NULL,
+	[NTUserName] [nvarchar](128) NULL,
+	[HostName] [nvarchar](128) NULL,
+	[ApplicationName] [nvarchar](128) NULL,
+	[LoginName] [nvarchar](128) NULL,
+	[Duration] [bigint] NULL,
+	[StartTime] [datetime] NULL)
+
+	
+	
+		[CPU] [int] NULL,
+	[Reads] [bigint] NULL,
+	[Writes] [bigint] NULL,
+
+	[ClientProcessID] [int] NULL,
+	[SPID] [int] NULL,
+
+	[EndTime] [datetime] NULL,
+	[BinaryData] [image] NULL,
+
+	[DatabaseName] [nvarchar](128) NULL,
+	[Error] [int] NULL,
+	[EventSequence] [bigint] NULL,
+	[GroupID] [int] NULL,
+
+	[IntegerData] [int] NULL,
+	[IsSystem] [int] NULL,
+	[LoginSid] [image] NULL,
+	[NTDomainName] [nvarchar](128) NULL,
+	[ObjectName] [nvarchar](128) NULL,
+	[RequestID] [int] NULL,
+	[RowCounts] [bigint] NULL,
+	[SessionLoginName] [nvarchar](128) NULL,
+	[TransactionID] [bigint] NULL,
+	[XactSequence] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[RowNumber] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+
+GO
+
+
+*/
+  
+-- Executando comando para contabilização de indicadores do GerenciaBD  
+  
+ exec (@COMANDO_INSERT_SERVIDOR_MONITORANDO)  
+  
+end  
+  
+-- Definindo comando para deleção de arquivos de trace já contabilizado  
+  
+ DECLARE @COMANDO_DELECAO VARCHAR (1000)  
+  
+ SET @COMANDO_DELECAO = 'del "'+ 'c:\scripts' + '\indicador_performance_dia.trc"'  
+  
+ print @COMANDO_DELECAO  
+  
+-- Executando comando para deleção de arquivo de trace já contabilizado  
+  
+ exec master..xp_cmdshell @COMANDO_DELECAO  
+  
+  
+-- Gerando server trace otimizado do GerenciaBD  
+  
+/****************************************************/  
+/* Created by: SQL Profiler                         */  
+/* Date: 27/04/2005  16:16:01         */  
+/****************************************************/  
+  
+  
+-- Create a Queue  
+declare @rc int  
+declare @TraceID int  
+declare @maxfilesize bigint  
+declare @datetime datetime  
+--declare @caminho varchar(50)  
+  
+  
+set @datetime = (select substring (convert (varchar(11),getdate(),120),1,11) + '23:59:00.000')  
+set @maxfilesize = 10000   
+  
+--print @dir  
+declare @arquivo_trace nvarchar(128)  
+set @arquivo_trace = 'c:\scripts' + '\indicador_performance_dia'  
+print @arquivo_trace  
+-- Please replace the text InsertFileNameHere, with an appropriate  
+-- filename prefixed by a path, e.g., c:\MyFolder\MyTrace. The .trc extension  
+-- will be appended to the filename automatically. If you are writing from  
+-- remote server to local drive, please use UNC path and make sure server has  
+-- write access to your network share  
+  
+--set @caminho = 'D:\SQLADMIN\MSSQL\LOG\' + convert (varchar(50),getdate(),112)  
+--select @caminho  
+exec @rc = sp_trace_create @TraceID output, 0, @arquivo_trace, @maxfilesize, @datetime  
+if (@rc != 0) goto error  
+  
+  
+  
+-- Client side File and Table cannot be scripted  
+  
+-- Writing to a table is not supported through the SP's  
+  
+-- Set the events  
+declare @on bit  
+set @on = 1  
+exec sp_trace_setevent @TraceID, 10, 1, @on  
+exec sp_trace_setevent @TraceID, 10, 3, @on  
+exec sp_trace_setevent @TraceID, 10, 6, @on  
+exec sp_trace_setevent @TraceID, 10, 8, @on  
+exec sp_trace_setevent @TraceID, 10, 9, @on  
+exec sp_trace_setevent @TraceID, 10, 10, @on  
+exec sp_trace_setevent @TraceID, 10, 11, @on  
+exec sp_trace_setevent @TraceID, 10, 12, @on  
+exec sp_trace_setevent @TraceID, 10, 13, @on  
+exec sp_trace_setevent @TraceID, 10, 14, @on  
+exec sp_trace_setevent @TraceID, 10, 16, @on  
+exec sp_trace_setevent @TraceID, 10, 17, @on  
+exec sp_trace_setevent @TraceID, 10, 18, @on  
+exec sp_trace_setevent @TraceID, 12, 1, @on  
+exec sp_trace_setevent @TraceID, 12, 3, @on  
+exec sp_trace_setevent @TraceID, 12, 6, @on  
+exec sp_trace_setevent @TraceID, 12, 8, @on  
+exec sp_trace_setevent @TraceID, 12, 9, @on  
+exec sp_trace_setevent @TraceID, 12, 10, @on  
+exec sp_trace_setevent @TraceID, 12, 11, @on  
+exec sp_trace_setevent @TraceID, 12, 12, @on  
+exec sp_trace_setevent @TraceID, 12, 13, @on  
+exec sp_trace_setevent @TraceID, 12, 14, @on  
+exec sp_trace_setevent @TraceID, 12, 16, @on  
+exec sp_trace_setevent @TraceID, 12, 17, @on  
+exec sp_trace_setevent @TraceID, 12, 18, @on  
+  
+  
+-- Set the Filters  
+declare @intfilter int  
+declare @bigintfilter bigint  
+  
+-- Verifica qual a versão do SQL Server para filtrar o server trace  
+  
+IF 10 <= 8 
+
+--if (select substring(Charcater_Value,1,1) from prodver)<= 8  
+	begin 
+		set @bigintfilter = 3000   
+	end
+else 
+	begin 
+		set @bigintfilter = 3000000  
+	end
+	
+exec sp_trace_setfilter @TraceID, 13, 0, 4, @bigintfilter  
+exec sp_trace_setfilter @TraceID, 8, 0, 7, @SERVIDOR_MONITORADO  
+exec sp_trace_setfilter @TraceID, 10, 0, 7, N'SQL Profiler'  
+exec sp_trace_setfilter @TraceID, 10, 0, 7, N'SQLAgent%'  
+set @intfilter = 100  
+exec sp_trace_setfilter @TraceID, 22, 0, 4, @intfilter  
+  
+  
+  
+-- Set the trace status to start  
+exec sp_trace_setstatus @TraceID, 1  
+  
+-- display trace id for future references  
+select TraceID=@TraceID  
+goto finish  
+  
+error:   
+select ErrorCode=@rc  
+  
+finish:   
+  
+   
+--EXEC sp_trace_setstatus 1, 0   
+--EXEC sp_trace_setstatus 1, 2  
+  
+--EXEC sp_trace_setstatus 2, 0   
+--EXEC sp_trace_setstatus 2, 2  
+  
+  
+--SELECT * FROM :: fn_trace_getinfo(default)  
+--select * into Trace_Table from ::fn_trace_gettable('c:\ind_perf\sicla_indicador_perform  
+  
+  
+-- Contabilizando informações de Bloqueios coletadas pelo job schedulado Alerta - Monitora Processos Bloqueados  
+  
+
+
+
+
+
+
+GO
+
+USE [msdb]
+GO
+
+/****** Object:  StoredProcedure [dbo].[spu_checkblocking]    Script Date: 12/18/2018 11:57:51 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER OFF
+GO
+
+
+create procedure [dbo].[spu_checkblocking]
+as
+	
+	declare @spid int,@blocked int,@waittime int,@dbccstmt varchar(100)
+	declare @eventtype1 varchar(300),@eventtype2 varchar(300), @hostname varchar(20), @program_name varchar(30), @program_name2 varchar(30), @host_blocking varchar(20)
+	declare cur_sp cursor for select spid,blocked,waittime,hostname,program_name from master.dbo.sysprocesses (nolock) where blocked > 1
+
+	create table #dbcc_output (
+	eventtype varchar(30),
+	parameters varchar(30),
+	eventinfo varchar(300)
+	)
+   	open cur_sp
+        fetch next from cur_sp into @spid,@blocked,@waittime,@hostname,@program_name
+	while (@@fetch_status = 0)
+	begin
+                select @program_name2 = program_name from master.dbo.sysprocesses (nolock) where spid=@blocked		
+                select @host_blocking = hostname from master.dbo.sysprocesses (nolock) where spid=@blocked
+
+		set @dbccstmt = 'dbcc inputbuffer ('+convert(char(3),@spid)+')'
+		print @dbccstmt
+		insert  into #dbcc_output  exec (@dbccstmt)
+		select @eventtype1 = eventinfo from #dbcc_output
+		truncate table #dbcc_output
+		set @dbccstmt = 'dbcc inputbuffer ('+convert(char(3),@blocked)+')'
+		insert  into #dbcc_output  exec (@dbccstmt)
+		select @eventtype2 = eventinfo from #dbcc_output
+		truncate table #dbcc_output
+
+		if @spid <> @blocked 
+			insert into blocktable values (@spid,@blocked,@eventtype1,@eventtype2,@waittime,@hostname,getdate(),@program_name, @program_name2,@host_blocking)
+                
+/*
+                if @waittime > 90000 exec master.dbo.xp_cmdshell 'net send "E0404019" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 2 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+                if @waittime > 90000 exec master.dbo.xp_cmdshell 'net send "E0404009" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 2 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+                if @waittime > 90000 exec master.dbo.xp_cmdshell 'net send "M2216" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 2 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+                if @waittime > 90000 exec master.dbo.xp_cmdshell 'net send "console" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 2 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+                if @waittime > 90000 exec master.dbo.xp_cmdshell 'net send "m2953" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 2 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+                if @waittime > 90000 exec master.dbo.xp_cmdshell 'net send "m2954" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 2 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+                if @waittime > 90000 exec master.dbo.xp_cmdshell 'net send "GILBERTR" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 2 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+                if @waittime > 600000 exec master.dbo.xp_cmdshell 'net send "uf104730" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 10 MINUTOS - UTILIZE A SP_QUEM"'
+                if @waittime > 600000 exec master.dbo.xp_cmdshell 'net send "uf025055" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 10 MINUTOS - UTILIZE A SP_QUEM"'
+                if @waittime > 600000 exec master.dbo.xp_cmdshell 'net send "uf015930" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 10 MINUTOS - UTILIZE A SP_QUEM"'
+                if @waittime > 600000 exec master.dbo.xp_cmdshell 'net send "uf100160" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 10 MINUTOS - UTILIZE A SP_QUEM"'
+                if @waittime > 600000 exec master.dbo.xp_cmdshell 'net send "uf100445" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 10 MINUTOS - UTILIZE A SP_QUEM"'
+                if @waittime > 600000 exec master.dbo.xp_cmdshell 'net send "m2953" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 10 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+                if @waittime > 90000 exec master.dbo.xp_cmdshell 'net send "m2954" "ACIARIA - PROCESSO BLOQUEADO A MAIS DE 2 MINUTOS - VERIFIQUE NO PROCESS INFO"'
+*/
+
+		fetch next from cur_sp into @spid,@blocked,@waittime,@hostname,@program_name
+	end
+	close cur_sp
+	deallocate cur_sp
+	drop table #dbcc_output
+
+
+
+
+
+
+GO
+
+
+
+
+GO
+
+
+USE [msdb]
+GO
+
+/****** Object:  Job [GerenciaBD]    Script Date: 26/08/2016 14:42:11 ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [[Uncategorized (Local)]]    Script Date: 26/08/2016 14:42:12 ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'GerenciaBD', 
+		@enabled=1, 
+		@notify_level_eventlog=2, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_GerenciaBD]    Script Date: 26/08/2016 14:42:12 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_GerenciaBD', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=10, 
+		@retry_interval=3, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'Exec spu_GerenciaBD', 
+		@database_name=N'msdb', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'A cada 3 Minutos', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=4, 
+		@freq_subday_interval=3, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20100928, 
+		@active_end_date=99991231, 
+		@active_start_time=0, 
+		@active_end_time=235959, 
+		@schedule_uid=N'431ed25e-1597-45f5-a3c4-18a8896450f8'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
+/****** Object:  Job [Alerta - Monitora Processos Bloqueados]    Script Date: 26/08/2016 14:42:12 ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [REPL-Checkup]    Script Date: 26/08/2016 14:42:12 ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'REPL-Checkup' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'REPL-Checkup'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'Alerta - Monitora Processos Bloqueados', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'Esse Job executa a stored procedure spu_checkblocking, que foi avaliada durante 30 dias. Como os resultados foram satisfatórios, foi implementada a funcionalidade de envio de mensagem para a Operação intervir em processos bloqueados a mais de 2 minutos.', 
+		@category_name=N'REPL-Checkup', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_checkblocking]    Script Date: 26/08/2016 14:42:12 ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_checkblocking', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=10, 
+		@retry_interval=1, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'SET DEADLOCK_PRIORITY LOW 
+exec spu_checkblocking', 
+		@database_name=N'msdb', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'schedule 2', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=4, 
+		@freq_subday_interval=1, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20030429, 
+		@active_end_date=99991231, 
+		@active_start_time=30, 
+		@active_end_time=235959, 
+		@schedule_uid=N'edcbf2b4-61fa-4b8d-8cf1-97880d613bde'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
