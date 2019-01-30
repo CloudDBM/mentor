@@ -1,0 +1,20 @@
+CREATE procedure spu_updatestats_fullscan as
+
+DECLARE updatestats CURSOR FOR
+SELECT table_name FROM information_schema.tables
+	where TABLE_TYPE = 'BASE TABLE' and TABLE_SCHEMA = 'dbo' 
+OPEN updatestats
+
+DECLARE @tablename NVARCHAR(128)
+DECLARE @Statement NVARCHAR(300)
+
+FETCH NEXT FROM updatestats INTO @tablename
+WHILE (@@FETCH_STATUS = 0)
+BEGIN
+   PRINT N'UPDATING STATISTICS ' + @tablename
+   SET @Statement = 'UPDATE STATISTICS ['  + @tablename + ']  WITH FULLSCAN'
+   EXEC sp_executesql @Statement
+   FETCH NEXT FROM updatestats INTO @tablename
+END
+
+
