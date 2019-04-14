@@ -1,0 +1,205 @@
+USE [master]
+GO
+
+/****** Object:  StoredProcedure [dbo].[spu_prepara_otimizacao_necessaria]    Script Date: 4/14/2019 8:29:29 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE proc [dbo].[spu_prepara_otimizacao_necessaria] as 
+declare
+       @isql varchar(MAX),
+       @dbname varchar(MAX),
+       @logfile varchar(MAX)
+       
+       declare c1 cursor for 
+       SELECT  d.name from  sys.databases d
+       where recovery_model_desc <> 'SIMPLE'   
+       open c1
+       fetch next from c1 into @dbname
+       While @@fetch_status <> -1
+             begin
+             select @isql = 'ALTER DATABASE [' + @dbname + '] SET RECOVERY BULK_LOGGED'
+             print @isql
+             exec(@isql)
+             --select @isql='USE ' + @dbname + ' checkpoint'
+             --print @isql
+             --exec(@isql)
+             --select @isql='USE ' + @dbname + ' DBCC SHRINKFILE (' + @logfile + ', 1)'
+             --print @isql
+             --exec(@isql)
+             
+             fetch next from c1 into @dbname
+             end
+       close c1
+       deallocate c1
+
+GO
+
+
+/****** Object:  StoredProcedure [dbo].[spu_Rebuild_Index_All_Databases]    Script Date: 4/14/2019 8:26:08 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+
+GO
+CREATE PROCEDURE [dbo].[spu_Rebuild_Index_All_Databases] (
+  @fillfactor tinyint = null
+)
+AS
+
+Set Nocount on
+Declare db Cursor For	
+		Select name from master.dbo.sysdatabases
+		Where name not in ('master','TempDB')
+Declare @dbname varchar(100)
+Declare @dbre varchar(1000)
+DECLARE @execstr nvarchar(255)
+Open db
+Fetch Next from db into @dbname
+While @@Fetch_status=0
+   begin
+	if @dbname is null 
+	  Begin
+   	    Print 'null Value'
+	  end
+	else 
+	  Begin
+	    PRINT '*************************************************************************** '
+            PRINT 'Reindexing All Tables in ' +@dbname
+  	    IF @fillfactor IS NULL
+                SELECT @execstr = 'EXEC ' + @dbname + '..sp_MSforeachtable @command1="print ''?'' DBCC DBREINDEX (''?'')"'
+            ELSE
+                SELECT @execstr = 'EXEC ' + @dbname + '..sp_MSforeachtable @command1="print ''?'' DBCC DBREINDEX (''?'','''',' + str(@fillfactor) + ')"'
+            EXEC(@execstr)
+	    PRINT ''
+          End
+     Fetch Next from db into @dbname	
+   end
+Close db
+Deallocate db
+
+GO
+
+
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[spu_finaliza_otimizacao_necessaria]    Script Date: 4/14/2019 8:26:08 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE proc [dbo].[spu_finaliza_otimizacao_necessaria] as 
+declare
+       @isql varchar(MAX),
+       @dbname varchar(MAX),
+       @logfile varchar(MAX)
+       
+       declare c1 cursor for 
+       SELECT  d.name from  sys.databases d
+       where recovery_model_desc <> 'SIMPLE'   
+       open c1
+       fetch next from c1 into @dbname
+       While @@fetch_status <> -1
+             begin
+             select @isql = 'ALTER DATABASE [' + @dbname + '] SET RECOVERY FULL'
+             print @isql
+             exec(@isql)
+             --select @isql='USE ' + @dbname + ' checkpoint'
+             --print @isql
+             --exec(@isql)
+             --select @isql='USE ' + @dbname + ' DBCC SHRINKFILE (' + @logfile + ', 1)'
+             --print @isql
+             --exec(@isql)
+             
+             fetch next from c1 into @dbname
+             end
+       close c1
+       deallocate c1
+
+
+GO
+
+
+
+
+
+USE [msdb]
+GO
+
+/****** Object:  Job [DBA - spu_Rebuild_Index_All_Databases]    Script Date: 4/14/2019 8:22:01 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [[Uncategorized (Local)]]    Script Date: 4/14/2019 8:22:01 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'DBA - spu_Rebuild_Index_All_Databases', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'[Uncategorized (Local)]', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [spu_Rebuild_Index_All_Databases]    Script Date: 4/14/2019 8:22:01 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'spu_Rebuild_Index_All_Databases', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'SET DEADLOCK_PRIORITY HIGH;  
+exec spu_prepara_otimizacao_necessaria;
+EXEC spu_Rebuild_Index_All_Databases;
+exec spu_finaliza_otimizacao_necessaria;
+', 
+		@database_name=N'master', 
+		@output_file_name=N'c:\temp\spu_Rebuild_Index_All_Databases.LOG', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'Noite', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20190414, 
+		@active_end_date=99991231, 
+		@active_start_time=220000, 
+		@active_end_time=235959--, 
+		--@schedule_uid=N'85d60697-ada3-448d-b625-0c8ce597efde'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+
+GO
+
