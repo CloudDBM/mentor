@@ -1,0 +1,26 @@
+-- Finaliza todas as sessões do Banco de Dados a ser alterado o mode de lock
+-- padrão o Otimista (snapshot isolation)
+
+USE master;
+
+DECLARE @kill varchar(8000); SET @kill = '';  
+SELECT @kill = @kill + 'kill ' + CONVERT(varchar(5), spid) + ';'  
+FROM master..sysprocesses  
+WHERE dbid = db_id('DBNAME')
+
+EXEC(@kill); 
+
+-- Altera modo de isolamento transacional para Otimista
+
+ALTER DATABASE DBNAME SET READ_COMMITTED_SNAPSHOT ON;
+
+ALTER DATABASE DBNAME SET ALLOW_SNAPSHOT_ISOLATION ON 
+
+-- Consulta em quais Bancos de Dados o lock otimista (Snapshot) está habilitado
+
+SELECT name,
+'Current Isolation State:' [ ],
+CASE is_read_committed_snapshot_on
+        WHEN 1 THEN 'ON' ELSE 'OFF'
+    END AS [Read Committed Snapsot State]
+FROM sys.databases 
