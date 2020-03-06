@@ -1,4 +1,4 @@
-SQL Server - Monitora Lock - Cria Procedure, Tabela E Job - Inclui A Consulta
+Autoridade_SQL_Server - Monitora Lock - Cria Procedure, Tabela E Job - Inclui A Consulta
 Esse script cria uma tabela de monitoração de locks e de waits bem como uma stored procedure para coletar esses dados no SQL Server e um job schedulado para captura de histórico da consulta.
 
 
