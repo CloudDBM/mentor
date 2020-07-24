@@ -1,0 +1,190 @@
+
+
+--SCRIPT PARA CONFIGURAR O RECEBIMENTO DE ALERTAS NATIVOS DO SQL SERVER
+
+
+--CONFIGURAR O DATABASE MAIL E ADICIONAR UM PROFILE
+
+sp_configure 'show advanced options', 1;
+GO
+RECONFIGURE;
+GO
+sp_configure 'Database Mail XPs', 1;
+GO
+RECONFIGURE
+GO
+
+DECLARE @pid INT;
+DECLARE @acctid INT;
+
+EXEC msdb.dbo.sysmail_add_profile_sp
+  @profile_name = 'Default Profile',
+  @profile_id = @pid OUTPUT;
+
+EXEC msdb.dbo.sysmail_add_account_sp 
+  @account_name = 'Default Account',
+  @email_address = 'sql.myserver@mycompany.com',
+  @display_name = 'SQL - myserver',
+  @replyto_address = 'DBAs@mycompany.com',
+  @mailserver_name = 'smtp.mycompany.com',
+  @account_id = @acctid OUTPUT;
+
+EXEC msdb.dbo.sysmail_add_profileaccount_sp
+  @profile_id = @pid,
+  @account_id = @acctid, 
+  @sequence_number = 1;
+GO
+
+-- CRIAÇÃO DO OPERATOR
+
+USE [msdb]
+GO
+
+EXEC msdb.dbo.sp_add_operator @name=N'DBAs', 
+		@enabled=1, 
+		@weekday_pager_start_time=90000, 
+		@weekday_pager_end_time=180000, 
+		@saturday_pager_start_time=90000, 
+		@saturday_pager_end_time=180000, 
+		@sunday_pager_start_time=90000, 
+		@sunday_pager_end_time=180000, 
+		@pager_days=0, 
+		@email_address=N'seuemail@sql.com', 
+		@category_name=N'[Uncategorized]'
+GO
+
+--CRIAÇÃO DOS ALERTAS NATIVOS 
+
+USE [msdb]
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 17 Alert', 
+  @message_id=0, 
+  @severity=17, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 18 Alert', 
+  @message_id=0, 
+  @severity=18, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 19 Alert', 
+  @message_id=0, 
+  @severity=19, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 20 Alert', 
+  @message_id=0, 
+  @severity=20, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 21 Alert', 
+  @message_id=0, 
+  @severity=21, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 22 Alert', 
+  @message_id=0, 
+  @severity=22, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 23 Alert', 
+  @message_id=0, 
+  @severity=23, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 24 Alert', 
+  @message_id=0, 
+  @severity=24, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO
+
+EXEC msdb.dbo.sp_add_alert @name=N'Error 25 Alert', 
+  @message_id=0, 
+  @severity=25, 
+  @enabled=1, 
+  @delay_between_responses=0, 
+  @include_event_description_in=1;
+GO 
+
+-- CONFIGURAÇÃO DA NOTIFICAÇÃO
+
+USE msdb;
+GO 
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 17 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 18 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 19 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 20 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 21 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 22 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 23 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 24 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
+
+EXEC msdb.dbo.sp_add_notification 
+  @alert_name = N'Error 25 Alert',
+  @operator_name = 'DBAs',
+  @notification_method = 1;
+GO
