@@ -61,7 +61,7 @@ BEGIN
     -- blocking found, sent email. 
     DECLARE @tableHTML NVARCHAR(MAX);
 
-    SET @tableHTML = N'<H1>Atenção - Bloqueios a mais de 1 minuto no Banco de Dados</H1>' + N'<table border="1">' + N'<tr>' + N'<th>session_id</th>' + N'<th>Status</th>' + 
+    SET @tableHTML = N'<H1>AtenÃ§Ã£o - Bloqueios a mais de 1 minuto no Banco de Dados</H1>' + N'<table border="1">' + N'<tr>' + N'<th>session_id</th>' + N'<th>Status</th>' + 
                      N'<th>blocking_session_id</th><th>wait_type</th><th>wait_resource</th>' + 
                      N'<th>WaitSec</th>' + N'<th>cpu_time</th>' + 
                      N'<th>logical_reads</th>' + N'<th>reads</th>' +
@@ -236,7 +236,7 @@ EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'DBA - Alerta - Monitora Proc
 		@notify_level_netsend=0, 
 		@notify_level_page=0, 
 		@delete_level=0, 
-		@description=N'Esse Job executa a stored procedure spu_checkblocking, que foi avaliada durante 30 dias. Como os resultados foram satisfatórios, foi implementada a funcionalidade de envio de mensagem para a Operação intervir em processos bloqueados a mais de 2 minutos.', 
+		@description=N'Esse Job executa a stored procedure spu_checkblocking, que foi avaliada durante 30 dias. Como os resultados foram satisfatÃ³rios, foi implementada a funcionalidade de envio de mensagem para a OperaÃ§Ã£o intervir em processos bloqueados a mais de 2 minutos.', 
 		@category_name=N'REPL-Checkup', 
 		@owner_login_name=N'sa', 
 		@notify_email_operator_name=N'CloudDB', @job_id = @jobId OUTPUT
