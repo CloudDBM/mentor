@@ -1,0 +1,8 @@
+SELECT jobs.name AS 'Job',
+msdb.dbo.agent_datetime(run_date, run_time) AS 'Data e hora que rodou',
+history.run_duration AS 'Duração em segundos'
+FROM msdb.dbo.sysjobs jobs
+INNER JOIN msdb.dbo.sysjobhistory history
+ON jobs.job_id = history.job_id
+WHERE jobs.enabled = 1
+order by run_date desc
