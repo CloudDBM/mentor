@@ -1,3 +1,10 @@
+/*
+	Identifies all single column statistics that are overlapped by other stats (share the same leading column)
+	By Kendan Van Dyke
+	Src: http://www.pythian.com/blog/sql-server-statistics-maintenance-and-best-practices/
+*/
+
+
 WITH    autostats ( object_id, stats_id, name, column_id ) 
           AS ( SELECT   sys.stats.object_id , 
                         sys.stats.stats_id , 
