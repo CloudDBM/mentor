@@ -1,0 +1,23 @@
+HEATH CHECK MICROSOFT INDICADORES
+
+Lista o os indicadores para o script do arquivo CHECK-MICROSOFT.sql
+
+ITEM | INDICADOR
+
+SQL SERVER -> Lista o tipo da instancia
+
+SQL SERVER AGENT -> Lista o status
+
+SQL SERVER -> Lista o tempo total que está online desde sua última inicialização
+
+DATABASES -> Lista os que estão offline
+
+DATABASES - Lista o status de cada
+
+JOBS -> Lista a verificação do status
+
+BACKUP -> Lista problemas
+
+ESPAÇO EM DISCO -> Lista estado de acordo com o percentual escolhido
+
+ERRORLOG -> Lista todas mensagens de erro do servidor de banco de dados
