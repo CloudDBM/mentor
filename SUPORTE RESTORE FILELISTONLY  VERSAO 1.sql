@@ -1,1 +1,0 @@
-RESTORE FILELISTONLY FROM  DISK = N'C:\Downloads\AdventureWorks2017.bak'
