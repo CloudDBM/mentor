@@ -115,7 +115,6 @@ GO
 -- Query result... 
 SELECT * FROM #tmp1
 WHERE 1=1
---AND dbName = '[Escola1]' 
 AND PercentChange > 1.00
 ORDER BY PercentChange DESC, RowModifications DESC
 GO
