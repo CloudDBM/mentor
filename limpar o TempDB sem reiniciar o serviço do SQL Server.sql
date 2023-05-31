@@ -56,7 +56,7 @@ GO
 SELECT d1.[name] into #db
 FROM sys.databases d1
 where d1.state_desc = 'ONLINE' and is_read_only = 0
---and d1.name in ('Angellira')
+--and d1.name in ('Ang')
  
 DECLARE @SQL NVARCHAR(MAX)
 declare @database_name sysname
