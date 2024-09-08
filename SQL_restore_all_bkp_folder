@@ -1,0 +1,98 @@
+-- Enable xp_cmdshell if necessary
+EXEC sp_configure 'show advanced options', 1;
+RECONFIGURE;
+EXEC sp_configure 'xp_cmdshell', 1;
+RECONFIGURE;
+
+-- Declare variables for folder paths
+DECLARE @BackupFolder NVARCHAR(255) = 'C:\Backups\' -- Folder containing backup files
+DECLARE @DataFolder NVARCHAR(255) = 'D:\SQLData\' -- New folder for data files on the destination server
+DECLARE @LogFolder NVARCHAR(255) = 'D:\SQLLogs\' -- New folder for log files on the destination server
+
+DECLARE @FileName NVARCHAR(255)
+DECLARE @OriginalDatabaseName NVARCHAR(255)
+DECLARE @LogicalDataName NVARCHAR(255)
+DECLARE @LogicalLogName NVARCHAR(255)
+DECLARE @PhysicalDataName NVARCHAR(255)
+DECLARE @PhysicalLogName NVARCHAR(255)
+DECLARE @RestoreSQL NVARCHAR(MAX)
+DECLARE @cmd NVARCHAR(255)
+
+-- Create a temporary table to store file names
+CREATE TABLE #BackupFiles (FileName NVARCHAR(255))
+
+-- Use xp_cmdshell to list all .bak files in the folder and insert into the temporary table
+SET @cmd = 'dir ' + @BackupFolder + '*.bak /b'
+INSERT INTO #BackupFiles (FileName)
+EXEC xp_cmdshell @cmd
+
+-- Cursor to loop through all .bak files
+DECLARE BackupCursor CURSOR FOR
+SELECT FileName
+FROM #BackupFiles
+WHERE FileName IS NOT NULL
+
+OPEN BackupCursor
+FETCH NEXT FROM BackupCursor INTO @FileName
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Create a temporary table to hold only relevant columns from RESTORE HEADERONLY
+    CREATE TABLE #HeaderInfo (
+        DatabaseName NVARCHAR(128) -- Only retrieve DatabaseName
+    )
+
+    -- Dynamically execute RESTORE HEADERONLY and only select the DatabaseName column
+    INSERT INTO #HeaderInfo (DatabaseName)
+    EXEC ('RESTORE HEADERONLY FROM DISK = ''' + @BackupFolder + @FileName + '''')
+
+    -- Extract the database name
+    SELECT @OriginalDatabaseName = DatabaseName FROM #HeaderInfo
+
+    -- Create a temporary table to hold only the relevant columns from RESTORE FILELISTONLY
+    CREATE TABLE #FileList (
+        LogicalName NVARCHAR(128),
+        PhysicalName NVARCHAR(260),
+        Type CHAR(1)
+    )
+
+    -- Dynamically capture only the LogicalName, PhysicalName, and Type columns for the files
+    INSERT INTO #FileList (LogicalName, PhysicalName, Type)
+    EXEC ('RESTORE FILELISTONLY FROM DISK = ''' + @BackupFolder + @FileName + '''')
+
+    -- Get the logical and physical names for the data and log files
+    SELECT @LogicalDataName = LogicalName, @PhysicalDataName = PhysicalName
+    FROM #FileList
+    WHERE Type = 'D' -- Data file
+
+    SELECT @LogicalLogName = LogicalName, @PhysicalLogName = PhysicalName
+    FROM #FileList
+    WHERE Type = 'L' -- Log file
+
+    -- Create the dynamic restore SQL statement with the MOVE clause to change the physical paths
+    SET @RestoreSQL = '
+    RESTORE DATABASE [' + @OriginalDatabaseName + '] 
+    FROM DISK = ''' + @BackupFolder + @FileName + ''' 
+    WITH MOVE ''' + @LogicalDataName + ''' TO ''' + @DataFolder + RIGHT(@PhysicalDataName, CHARINDEX('\', REVERSE(@PhysicalDataName))-1) + ''', 
+         MOVE ''' + @LogicalLogName + ''' TO ''' + @LogFolder + RIGHT(@PhysicalLogName, CHARINDEX('\', REVERSE(@PhysicalLogName))-1) + ''', 
+         REPLACE;'
+
+    -- Execute the dynamic restore command
+    EXEC sp_executesql @RestoreSQL
+
+    -- Clean up for the next iteration
+    DROP TABLE #FileList
+    DROP TABLE #HeaderInfo
+
+    FETCH NEXT FROM BackupCursor INTO @FileName
+END
+
+CLOSE BackupCursor
+DEALLOCATE BackupCursor
+
+-- Drop the temporary table for backup files
+DROP TABLE #BackupFiles
+
+-- Disable xp_cmdshell if necessary
+-- EXEC sp_configure 'xp_cmdshell', 0;
+-- RECONFIGURE;
