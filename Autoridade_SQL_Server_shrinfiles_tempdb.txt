@@ -1,0 +1,45 @@
+USE [tempdb]
+GO
+CHECKPOINT;
+DBCC DROPCLEANBUFFERS;
+DBCC FREEPROCCACHE;
+DBCC FREESYSTEMCACHE ('ALL');
+DBCC FREESESSIONCACHE;
+go
+DBCC SHRINKDATABASE(N'tempdb' )
+GO
+
+USE tempdb;
+GO
+ 
+DECLARE @NomeArquivo NVARCHAR(255);
+DECLARE @SQL NVARCHAR(4000);
+ 
+-- Cursor para obter todos os arquivos de dados no tempdb
+DECLARE CursorArquivos CURSOR FOR
+SELECT name
+FROM sys.master_files
+WHERE type = 0 -- 0 para arquivos de dados, 1 para arquivos de log
+AND database_id = DB_ID('tempdb');
+ 
+-- Abrir cursor
+OPEN CursorArquivos;
+FETCH NEXT FROM CursorArquivos INTO @NomeArquivo;
+ 
+-- Loop para todos os arquivos de dados
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Construir SQL dinâmico para reduzir o arquivo
+    SET @SQL = 'DBCC SHRINKFILE ([' + @NomeArquivo + '], 1)'; -- Reduzir para o tamanho mínimo de 1 MB
+    PRINT 'Reduzindo arquivo do tempdb: ' + @NomeArquivo;
+    EXEC sp_executesql @SQL;
+ 
+    -- Buscar o próximo arquivo
+    FETCH NEXT FROM CursorArquivos INTO @NomeArquivo;
+END;
+ 
+-- Fechar e desalocar o cursor
+CLOSE CursorArquivos;
+DEALLOCATE CursorArquivos;
+ 
+GO
