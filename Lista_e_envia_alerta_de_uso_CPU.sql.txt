@@ -1,0 +1,97 @@
+/*
+================================================================================
+Propósito: Monitoramento proativo de uso de CPU no SQL Server.
+
+Descrição: 
+Este script verifica o uso atual de CPU da instância utilizando a DMV 
+sys.dm_os_ring_buffers. Se a utilização total da CPU (SQL Server + 
+Outros processos) atingir ou ultrapassar 70%, o script:
+1. Identifica as 2 consultas (queries) com maior tempo de processamento 
+   (total_worker_time) que também possuem recomendações de índices ausentes.
+2. Formata as informações e o texto dessas consultas.
+3. Envia um alerta por e-mail para o destinatário informado, 
+   contendo as queries problemáticas no corpo da mensagem.
+================================================================================
+*/
+
+-- =============================================================================
+-- INFORME O E-MAIL DO DESTINATÁRIO AQUI (Separe por ; para mais de um)
+-- =============================================================================
+DECLARE @email_destinatario VARCHAR(MAX) = 'seuemail@empresa.com.br'; 
+-- =============================================================================
+
+DECLARE @ts_now BIGINT = (
+    SELECT cpu_ticks / ( cpu_ticks / ms_ticks )
+    FROM sys.dm_os_sys_info WITH (NOLOCK)
+);
+
+DECLARE @TotalUtilization INT;
+
+-- Coleta o uso atual de CPU e armazena na variável
+WITH ultimos_dados AS (
+    SELECT TOP (1)
+        SQLProcessUtilization,
+        SystemIdle,
+        100 - SystemIdle - SQLProcessUtilization AS OtherProcessUtilization,
+        100 - SystemIdle AS TotalUtilization,
+        DATEADD(ms, -1 * (@ts_now - [timestamp]), GETDATE()) AS [EventTime]
+    FROM (
+        SELECT
+            record.value('(./Record/@id)[1]', 'int') AS record_id,
+            record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'int') AS SystemIdle,
+            record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int') AS SQLProcessUtilization,
+            [timestamp]
+        FROM (
+            SELECT [timestamp], CONVERT(XML, record) AS record
+            FROM sys.dm_os_ring_buffers WITH (NOLOCK)
+            WHERE ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
+              AND record LIKE N'%<SystemHealth>%'
+        ) AS x
+    ) AS y
+    ORDER BY record_id DESC
+)
+SELECT @TotalUtilization = TotalUtilization FROM ultimos_dados;
+
+-- Se CPU >= 70%, envia alerta
+IF @TotalUtilization >= 70
+BEGIN
+    DECLARE @top_queries NVARCHAR(MAX) = '';
+    DECLARE @body_message NVARCHAR(MAX);
+    
+    -- Recupera as 2 queries mais pesadas com índice ausente
+    SELECT TOP 2 @top_queries = @top_queries + 
+        CHAR(13) + CHAR(10) +
+        '--- Query ---' + CHAR(13) + CHAR(10) +
+        'CPU Time (ms): ' + CAST(qs.total_worker_time / 1000 AS VARCHAR(20)) + CHAR(13) + CHAR(10) +
+        'Exec Count: ' + CAST(qs.execution_count AS VARCHAR(20)) + CHAR(13) + CHAR(10) +
+        'SQL Text: ' + CHAR(13) + CHAR(10) + LEFT(REPLACE(REPLACE(text.text, CHAR(13), ''), CHAR(10), ' '), 4000) + CHAR(13) + CHAR(10) +
+        '-------------------------' + CHAR(13) + CHAR(10)
+    FROM (
+        SELECT TOP 10
+            qs.plan_handle,
+            qs.total_worker_time,
+            qs.execution_count
+        FROM sys.dm_exec_query_stats qs
+        ORDER BY qs.total_worker_time DESC
+    ) AS qs
+    CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) p
+    CROSS APPLY sys.dm_exec_sql_text(qs.plan_handle) AS text
+    WHERE p.query_plan.exist('declare namespace 
+        qplan = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
+        //qplan:MissingIndexes') = 1;
+
+    -- Monta o corpo do e-mail
+    SET @body_message = 
+        'Foi detectado uso elevado de CPU acima de 70%.' + CHAR(13) + CHAR(10) +
+        'Horário do evento: ' + CONVERT(VARCHAR, GETDATE(), 120) + CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10) +
+        'As queries com maior consumo de CPU e índice ausente são:' + CHAR(13) + CHAR(10) +
+        ISNULL(NULLIF(@top_queries, ''), 'Nenhuma query com índice ausente foi capturada no momento.');
+
+   -- Envia o e-mail via Database Mail
+    EXEC msdb.dbo.sp_send_dbmail  
+        @profile_name = 'DBA', -- <--- Adicione aqui o seu profile
+		@recipients = @email_destinatario,  
+        @subject = N'[ALERTA] Uso de CPU acima de 70% na instância SQL Server',  
+        @body = @body_message;
+END
+
